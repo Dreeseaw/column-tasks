@@ -23,10 +23,10 @@ func defaultTestColls() (*Stream, *column.Collection, *column.Collection) {
     return w, source, target
 }
 
-func TestTask(t *testing.T) {
+func TestReplicaTask(t *testing.T) {
     stream, source, target := defaultTestColls()
 
-    task := CreateTask(stream, target, nil)
+    task := CreateReplicaTask(stream, target)
     task.Start()
 
     source.Insert(func (r column.Row) error {
