@@ -5,12 +5,11 @@ import (
     "testing"
 
     "github.com/kelindar/column"
-    "github.com/kelindar/column/commit"
     "github.com/stretchr/testify/assert"
 )
 
-func defaultTestColls() (commit.Channel, *column.Collection, *column.Collection) {
-    w := make(commit.Channel, 1024)
+func defaultTestColls() (*Stream, *column.Collection, *column.Collection) {
+    w := NewStream()
     source := column.NewCollection(column.Options{
         Writer: w,
     })
@@ -28,7 +27,6 @@ func TestTask(t *testing.T) {
     stream, source, target := defaultTestColls()
 
     task := CreateTask(stream, target, nil)
-
     task.Start()
 
     source.Insert(func (r column.Row) error {
