@@ -5,7 +5,7 @@ jobs:
     name: Do the testings
     runs-on: ubuntu-latest
     strategy:
-      matric:
+      matrix:
         go: ["1.18"]
     steps:
       - name: Set up Go${{ matrix.go }}
