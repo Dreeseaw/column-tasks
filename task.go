@@ -1,131 +1,79 @@
 package tasks
 
 import (
-    "fmt"
-    "time"
-
-    "github.com/kelindar/column"
-    comm "github.com/kelindar/column/commit"
+//    "fmt"
 )
 
-// --- Stream ---
+// --- Delta Operation Node --- 
 
-// Implements commit.Logger 
-type Stream struct {
-    inner chan comm.Commit
+type Delta struct {
+    id        string
+    workQueue commChan
 }
 
-func NewStream() *Stream {
-    return &Stream{
-        inner: make(chan comm.Commit, 1024),
+// --- Task ---
+
+type TaskDef func(t *Task)
+
+// Task forms a map of deltas (operations) and an execution plan upon creation,
+// and then executes the plan on each set of changes onto the target collection
+type Task struct {
+    name   string // the id of the task
+    source commChan // the stream connected to the source collection
+    colSrc map[string]commChan // split source into needed col delta nodes
+    target *Target // the target connected to the collection to be updated
+    deltas map[string]*Delta // map of all delta nodes used in task
+
+    // API accessable
+    Target map[string]*Delta // let user assign upstream delta op
+}
+
+// CreateTask returns the task, ready to be started
+func CreateTask(id string, src *Stream, trgt *Target, def TaskDef) *Task {
+    srcChan := src.AddTask(id)
+    if srcChan == nil {
+        return nil
     }
-}
 
-func (s *Stream) Append(commit comm.Commit) error {
-    s.inner <- commit.Clone()
-    return nil
-}
-
-// --- Replica Task ---
-
-// ReplicaTask is a simple task that replicates the changes from a source
-// collection to a target collection
-type ReplicaTask struct {
-    source *Stream
-    target *column.Collection
-}
-
-// CreateReplicaTask returns a task, ready to be started
-func CreateReplicaTask(src *Stream, trgt *column.Collection) *ReplicaTask {
-    return &ReplicaTask{
-        source: src,
+    t := &Task{
+        name: id,
+        source: srcChan,
+        colSrc: make(map[string]commChan),
         target: trgt,
+        deltas: make(map[string]*Delta),
+        Target: make(map[string]*Delta),
     }
-}
 
-// Start the task before making changes to collection
-func (t *ReplicaTask) Start() {
-    go func() {
-        for change := range t.source.inner {
-            t.target.Replay(change)
-        }
-    }()
-}
+    // process task definiton
+    def(t)
 
-// --- Stream Task ---
-
-type StreamTaskFn func(c comm.Commit) error
-
-// StreamTask executes a callback query whenever a source collection is updated in any way
-type StreamTask struct {
-    source *Stream
-    target *column.Collection
-    fn     StreamTaskFn
-}
-
-// CreateStreamTask returns the task, ready to be started
-func CreateStreamTask(src *Stream, trgt *column.Collection, fn StreamTaskFn) *StreamTask {
-    t := &StreamTask{
-        source: src,
-        target: trgt,
-        fn: fn,
-    }
     return t
 }
 
 // Start the task
-func (t *StreamTask) Start() {
-    if t.fn == nil {
-        return
-    }
+func (t *Task) Start() {
+
+    // start the source splitter
     go func() {
-        for change := range t.source.inner {
-            // convert change to something readable?
-            t.fn(change)
-        }
-    }()
-}
-
-// --- Cron Task ---
-
-// CronTask runs a query on a collection at a specified time interval
-type CronTask struct {
-    source   *column.Collection
-    fn       func(txn *column.Txn) error
-    interval int // in ms
-    stop     chan struct{}
-}
-
-// CreateCronTask is pretty simple
-func CreateCronTask(src *column.Collection, fn func(txn *column.Txn) error) *CronTask {
-    return &CronTask{
-        source: src,
-        fn: fn,
-        interval: 1000,
-        stop: make(chan struct{}),
-    }
-}
-
-// Start the task
-func (t *CronTask) Start() {
-    ticker := time.NewTicker(time.Duration(t.interval) * time.Millisecond)
-
-    go func() {
-        for {
-            select {
-                case <-t.stop:
-                    ticker.Stop()
-                    return
-                case t := <-ticker.C:
-                    fmt.Printf("tick time: %v\n", t)
-            }
+        for change := range t.source {
+            printChange(change)
         }
     }()
 
-    fmt.Println("Cron Task stopped")
 }
 
-// Stop the task
-func (t *CronTask) Stop() {
-    t.stop <- struct{}{}
+// --- The Task Definition API ---
+
+func (t *Task) Source(colName string) *Delta {
+    colChan := make(commChan, 1024)
+    t.colSrc[colName] = colChan
+    nodeId := colName + "_src"
+
+    // delta op gets dml for specific col
+    d := &Delta{
+        id: nodeId,
+        workQueue: colChan,
+    }
+    t.deltas[nodeId] = d
+    return d
 }
