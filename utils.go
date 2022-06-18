@@ -5,17 +5,22 @@ import (
     comm "github.com/kelindar/column/commit"
 )
 
-type Change struct {
+type delta struct {
     Column string
     Type comm.OpType
     Offset int32
     Payload any
 }
 
-func printChange(change comm.Commit) {
-    fmt.Printf("\t----\n")
+type deltaSet []delta
+
+func getDeltas(change comm.Commit) map[string]deltaSet {
     reader := comm.NewReader()
+    deltaSets := make(map[string]deltaSet)
+
+    fmt.Printf("\t----\n")
     for _, u := range change.Updates {
+        colDeltas := make([]delta, 0)
         for reader.Seek(u); reader.Next(); {
             var payload any
 
@@ -25,16 +30,21 @@ func printChange(change comm.Commit) {
                 payload = reader.String()
             case "cnt":
                 payload = reader.Int()
+            case "row":
+                payload = reader.Type
             default:
                 payload = "special"
             }
-            cc := Change{
+            cc := delta{
                 Column: u.Column,
                 Type: reader.Type,
                 Offset: reader.Offset,
                 Payload: payload,
             }
+            colDeltas = append(colDeltas, cc)
             fmt.Printf("Change: %v\n", cc)
         }
+        deltaSets[u.Column] = colDeltas
     }
+    return deltaSets
 }

@@ -75,13 +75,60 @@ func TestTask(t *testing.T) {
     })
     */
 
+    /*
+    v4?
+    task := CreateTask("mytask", stream, target, func(t *Task) {
+        ex: replica
+        t.Target["id"] = t.Source["id"]
+        t.Target["cnt"] = t.Source["cnt"]
+
+        ex: delta op
+        ...
+        t.Target["cnt"] = t.Source["cnt"].Multiply(2)
+    })
+    */
+
+    /*
+    multi stream input ex
+    streams := map[string]*Stream{}{
+        "tableA": stream1,
+        "tableB": stream2,
+    }
+    task := CreateTask("mytask", streams, target, func(t *Task) {
+        ex: simple join
+        a_id := t.Source["tableA.id"]
+        b_id := t.Source["tableB.id"]
+        t.Target["id"] = a_id.Join(b_id)
+
+        // need to distingiush join key?
+        // use data from prev join?
+        t.Target["cnt"] = t.Source["tableA.cnt"].Add(t.Source["tableB.cnt"])
+    })
+    */
+
+    /*
+    ex: a group by?
+    task := ... {
+        t.Target["id"] = t.Source("id")
+        t.Target["cnt"] = t.Source("cnt").GroupBy("id")
+    }
+    */
+
+    /*
+    ex: a delta op?
+    task := ... {
+        t.Target["id"] = t.Source("id")
+        t.Target["cnt"] = t.Source("cnt").Mult(3) 
+    }
+    */
+
     // v3
     task := CreateTask("mytask", stream, targetObj, func(t *Task) {
-        idCol := t.Source("id")
-        cntCol := t.Source("cnt")
+        //idCol := t.Source["id"]
+        //cntCol := t.Source["cnt"]
 
-        t.Target["id"] = idCol
-        t.Target["cnt"] = cntCol
+        //t.Target["id"] = idCol
+        //t.Target["cnt"] = cntCol
     })
     task.Start()
 
