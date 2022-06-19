@@ -8,7 +8,7 @@ import (
 type delta struct {
     Column string
     Type comm.OpType
-    Offset int32
+    Offset uint32
     Payload any
 }
 
@@ -38,7 +38,7 @@ func getDeltas(change comm.Commit) map[string]deltaSet {
             cc := delta{
                 Column: u.Column,
                 Type: reader.Type,
-                Offset: reader.Offset,
+                Offset: uint32(reader.Offset),
                 Payload: payload,
             }
             colDeltas = append(colDeltas, cc)

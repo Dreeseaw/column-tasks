@@ -73,6 +73,7 @@ func (t *Task) Start() {
                     })
                 } else {
                     // process delete
+                    t.target.inner.DeleteAt(deltas[0].Offset)
                 }
             } else {
                 // process update
