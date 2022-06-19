@@ -1,0 +1,22 @@
+name: Testing
+on: [push, pull_request]
+jobs:
+  test:
+    name: Do the testings
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        go: ["1.18"]
+    steps:
+      - name: Set up Go${{ matrix.go }}
+        uses: actions/setup-go@v3
+        with:
+          go-version: ${{ matrix.go }}
+      - name: Check out
+        uses: actions/checkout@v3
+      - name: Install Deps
+        run: |
+          go mod download
+      - name: Run Tests
+        run: |
+          go test -race -covermode atomic ./...
