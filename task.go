@@ -2,7 +2,7 @@ package tasks
 
 import (
     "fmt"
-    "github.com/kelindar/column"
+    // "github.com/kelindar/column"
 )
 
 // --- Task ---
@@ -60,39 +60,9 @@ func (t *Task) Start() {
             deltaMap := getDeltas(change)
             fmt.Println(deltaMap)
             
-            if deltas, rowChange := deltaMap["row"]; rowChange {
-                if deltas[0].Type == 1 {
-                    // process insert
-                    t.target.inner.Insert(func (r column.Row) error {
-                        for colName, vDelta := range deltaMap {
-                            // overlook TTL for now
-                            if colName != "row" && colName != "expire" {
-                                r.SetAny(colName, vDelta[0].Payload)
-                            }
-                        }
-                        return nil
-                    })
-                } else {
-                    // process delete
-                    t.target.inner.DeleteAt(deltas[0].Offset)
-                }
-            } else {
-                // process update
-                t.target.inner.Query(func (txn *column.Txn) error {
-                    for colName, uDeltas := range deltaMap {
-                        for _, curDelta := range uDeltas {
-                            txn.QueryAt(curDelta.Offset, func (r column.Row) error {
-                                r.SetAny(colName, curDelta.Payload)
-                                return nil
-                            })
-                        }
-                    }
-                    return nil
-                })
-            }
-
-            // goal is to mock
-            // t.target.inner.Replay(change)
+            // apply generated changes to target table
+            // TODO: abstract target to independent goroutine
+            t.target.Apply(deltaMap)
         }
     }()
 

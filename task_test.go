@@ -127,8 +127,8 @@ func TestTask(t *testing.T) {
         //idCol := t.Source["id"]
         //cntCol := t.Source["cnt"]
 
-        //t.Target["id"] = idCol
-        //t.Target["cnt"] = cntCol
+        // t.Target["id"] = idCol
+        // t.Target["cnt"] = cntCol
     })
     task.Start()
 
