@@ -1,7 +1,7 @@
 package tasks
 
 import (
-    // "fmt"
+    "fmt"
     "github.com/kelindar/column"
 )
 
@@ -58,6 +58,7 @@ func (t *Task) Start() {
     go func() {
         for change := range t.srcChn {
             deltaMap := getDeltas(change)
+            fmt.Println(deltaMap)
             
             if deltas, rowChange := deltaMap["row"]; rowChange {
                 if deltas[0].Type == 1 {
@@ -77,6 +78,17 @@ func (t *Task) Start() {
                 }
             } else {
                 // process update
+                t.target.inner.Query(func (txn *column.Txn) error {
+                    for colName, uDeltas := range deltaMap {
+                        for _, curDelta := range uDeltas {
+                            txn.QueryAt(curDelta.Offset, func (r column.Row) error {
+                                r.SetAny(colName, curDelta.Payload)
+                                return nil
+                            })
+                        }
+                    }
+                    return nil
+                })
             }
 
             // goal is to mock

@@ -1,7 +1,7 @@
 package tasks
 
 import (
-    "fmt"
+    // "fmt"
     comm "github.com/kelindar/column/commit"
 )
 
@@ -18,7 +18,7 @@ func getDeltas(change comm.Commit) map[string]deltaSet {
     reader := comm.NewReader()
     deltaSets := make(map[string]deltaSet)
 
-    fmt.Printf("\t----\n")
+    // fmt.Printf("\t----\n")
     for _, u := range change.Updates {
         colDeltas := make([]delta, 0)
         for reader.Seek(u); reader.Next(); {
@@ -42,7 +42,7 @@ func getDeltas(change comm.Commit) map[string]deltaSet {
                 Payload: payload,
             }
             colDeltas = append(colDeltas, cc)
-            fmt.Printf("Change: %v\n", cc)
+            // fmt.Printf("Change: %v\n", cc)
         }
         deltaSets[u.Column] = colDeltas
     }

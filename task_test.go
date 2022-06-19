@@ -159,7 +159,13 @@ func TestTask(t *testing.T) {
 
     time.Sleep(2 * time.Second)
     target.Query(func (txn *column.Txn) error {
-        assert.Equal(t, 1, txn.Count())
+        assert.Equal(t, 3, txn.Count())
+        cnt := txn.Int("cnt")
+        id := txn.Any("id")
+        txn.Range(func (i uint32) {
+            actualId, _ := id.Get(); assert.Equal(t, "bob3", actualId)
+            actualCnt, _ := cnt.Get(); assert.Equal(t, 3, actualCnt)
+        })
         return nil
     })
 }
