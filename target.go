@@ -18,7 +18,16 @@ func NewTarget(coll *column.Collection) *Target {
     }
 }
 
-func (t *Target) Apply(deltaMap map[string]deltaSet) {
+func (t *Target) Apply(deltaList deltaSet) {
+
+    dml = 0
+
+    for d, curDelta := range deltaList {
+        if curDelta.Type == 1 {
+            dml = 1
+        } else if curDelta.Type == 0 {}
+    }
+
     if deltas, rowChange := deltaMap["row"]; rowChange {
         if deltas[0].Type == 1 {
             // process insert

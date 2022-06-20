@@ -14,13 +14,12 @@ type delta struct {
 
 type deltaSet []delta
 
-func getDeltas(change comm.Commit) map[string]deltaSet {
+func getDeltas(change comm.Commit) deltaSet {
     reader := comm.NewReader()
-    deltaSets := make(map[string]deltaSet)
+    colDeltas := make(deltaSet, 0)
 
     // fmt.Printf("\t----\n")
     for _, u := range change.Updates {
-        colDeltas := make([]delta, 0)
         for reader.Seek(u); reader.Next(); {
             var payload any
 
@@ -44,7 +43,12 @@ func getDeltas(change comm.Commit) map[string]deltaSet {
             colDeltas = append(colDeltas, cc)
             // fmt.Printf("Change: %v\n", cc)
         }
-        deltaSets[u.Column] = colDeltas
+        // deltaSets[u.Column] = colDeltas
     }
-    return deltaSets
+    return colDeltas
+}
+
+func mergeDeltas(deltas deltaSet) deltaSet {
+    // go thru deltas, delete row multiples
+
 }
