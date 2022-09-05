@@ -9,6 +9,7 @@ require (
 
 require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
+	github.com/deckarep/golang-set/v2 v2.1.0 // indirect
 	github.com/kelindar/bitmap v1.4.1 // indirect
 	github.com/kelindar/intmap v1.1.0 // indirect
 	github.com/kelindar/iostream v1.3.0 // indirect

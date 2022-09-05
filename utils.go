@@ -5,45 +5,54 @@ import (
     comm "github.com/kelindar/column/commit"
 )
 
+// Offset -> delta
+type deltaMap map[uint32]*delta 
+
+// Represents changes to one offset
 type delta struct {
-    Column string
-    Type comm.OpType
-    Offset uint32
-    Payload any
+    Type uint8 // 1 = insert
+    Payload PayloadMap // For Inserts & Updates
 }
 
-type deltaSet []delta
+// Column -> Value
+type PayloadMap map[string]any
 
-func getDeltas(change comm.Commit) map[string]deltaSet {
+func getDeltas(change comm.Commit) deltaMap {
     reader := comm.NewReader()
-    deltaSets := make(map[string]deltaSet)
+    dMap := make(deltaMap)
 
-    // fmt.Printf("\t----\n")
     for _, u := range change.Updates {
-        colDeltas := make([]delta, 0)
         for reader.Seek(u); reader.Next(); {
-            var payload any
+            ofst := uint32(reader.Offset)
 
-            // get col type from Coll, switch on that
+            // In the case of updates, mulitple 
+            // offsets can be written to in 
+            // one change
+            d, exists := dMap[ofst]
+            if !exists {
+                del := &delta{
+                    Type: 2, // Update by default - see below
+                    Payload: make(PayloadMap), 
+                }
+                d = del
+                dMap[ofst] = del
+            }
+            
+            // Insert or Delete contain 'row' column
+            if u.Column == "row" {
+                d.Type = uint8(reader.Type)
+            }
+
+            // TODO: get col type from Coll, switch on that
             switch u.Column {
             case "id":
-                payload = reader.String()
+                d.Payload[u.Column] = reader.String()
             case "cnt":
-                payload = reader.Int()
-            case "row":
-                payload = reader.Type
+                d.Payload[u.Column] = reader.Int()
             default:
-                payload = "special"
+                d.Payload[u.Column] = "unknown"
             }
-            cc := delta{
-                Column: u.Column,
-                Type: reader.Type,
-                Offset: uint32(reader.Offset),
-                Payload: payload,
-            }
-            colDeltas = append(colDeltas, cc)
         }
-        deltaSets[u.Column] = colDeltas
     }
-    return deltaSets
+    return dMap
 }

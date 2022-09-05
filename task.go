@@ -2,7 +2,9 @@ package tasks
 
 import (
     "fmt"
-    "github.com/kelindar/column"
+
+//     "github.com/kelindar/column"
+    mapset "github.com/deckarep/golang-set/v2"
 )
 
 // --- Task ---
@@ -17,7 +19,8 @@ type Task struct {
     srcChn commChan // the stream connected to the source collection
     colSrc map[string]commChan // split source into needed col delta nodes
     trgt   *Target // the target connected to the collection to be updated
-    ops []Operation
+    srcCols mapset.Set[string]
+    // ops []Operation
 
     // Task Definition accessable
     Target map[string]*marker // let user assign output cols
@@ -25,7 +28,7 @@ type Task struct {
 
 // basic building block of task definitions
 type marker struct {
-    id    string
+    src   string
     path  []string
 }
 
@@ -38,23 +41,23 @@ func CreateTask(id string, src *Stream, trgt *Target, def TaskDef) *Task {
         return nil
     }
 
-    // init Target & Source maps for definition reference
-    tarMap := make(map[string]*Delta)
-    // srcMap := make(map[string]*Delta)
+    // init Target maps for definition reference
+    tarMap := make(map[string]*marker)
 
     t := &Task{
         name:   id,
         srcChn: srcChan,
         colSrc: make(map[string]commChan),
         trgt:   trgt,
-        ops:    make([]Operation, 0) // should be set
+        srcCols: mapset.NewSet[string](),
+        // ops:    make([]Operation, 0), // should be set
         Target: tarMap,
         // Source: srcMap,
     }
 
     // process task definiton
     def(t)
-    if !len(t.Target) {
+    if len(t.Target) == 0 {
         return nil
     }
 
@@ -64,19 +67,10 @@ func CreateTask(id string, src *Stream, trgt *Target, def TaskDef) *Task {
     //    T.id   T.cnt
 
     // markers -> operations
-    t.ops = append(t.ops, &RowOp{
-        offsetMap: make(map[uint64]uint64),
-    })
-    for cName, finalMarker := range t.Target {
-        t.ops = append(t.ops, &TargetOp{
-            colName: cName,
-        })
-        for step, _ := range finalMarker.path {
-            switch step {
-            case "src":
-                t.ops = append(t.ops, &SourceOp{
-                    colName: finalMarker.id,
-                })
+    for _, finalMarker := range t.Target {
+        for _, step := range finalMarker.path {
+            if step ==  "src" {
+                t.srcCols.Add(finalMarker.src)
             }
         }
     }
@@ -93,30 +87,28 @@ func (t *Task) Start() {
             deltaMap := getDeltas(change)
             fmt.Println(deltaMap)
             
-                        
-
-            if deltas, rowChange := deltaMap["row"]; rowChange {
-                if deltas[0].Type == 1 { // process insert
-                    err := t.trgt.Insert(deltaMap)
-                    if err != nil {
-                        panic() // TODO: return errors
-                    }
-                    
-                } else { // process delete
-                    err := t.trgt.Delete(deltas[0].Offset)
-                    if err != nil {
-                        panic() // TODO: return errors
-                    }
+            // Only need changes for relevant columns
+            for _, del := range deltaMap {
+                if del.Type == 0 {
+                    continue
                 }
-            } else { // process update
-                err := t.trgt.Update(deltaMap)
-                if err != nil {
-                    panic()
+                for cn, _ := range del.Payload {
+                    if !t.srcCols.Contains(cn) {
+                        delete(del.Payload, cn)
+                    }
                 }
             }
 
-            // goal is to mock
-            // t.target.inner.Replay(change)
+
+            for ofst, del := range deltaMap {
+                if del.Type == 1 {
+                    t.trgt.Insert(del.Payload) 
+                } else if del.Type == 0 {
+                    t.trgt.Delete(ofst)
+                } else {
+                    t.trgt.Update(ofst, del.Payload)
+                }
+            }
         }
     }()
 
@@ -125,13 +117,11 @@ func (t *Task) Start() {
 // --- The Task Definition API ---
 
 func (t *Task) Source(colName string) *marker {
-    nodeId := colName
-
     // TODO: validate source table has column
 
     // delta op saves task structure
     d := &marker{
-        id: nodeId,
+        src: colName,
         path: make([]string, 0),
     }
     d.path = append(d.path, "src")

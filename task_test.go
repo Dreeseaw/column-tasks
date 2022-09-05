@@ -141,11 +141,13 @@ func TestTask(t *testing.T) {
             return nil
         })
     }
+    // Insert a value to be deleted in 1 second
     source.InsertObjectWithTTL(map[string]interface{}{
         "id": "bob2",
         "cnt": 4,
     }, 1 * time.Second)
     
+    // Update some values
     source.Query(func (txn *column.Txn) error {
         cnt := txn.Int("cnt")
         id := txn.Any("id")
@@ -156,7 +158,8 @@ func TestTask(t *testing.T) {
         return nil
     })
     
-
+    // Sleep thru TTL delete
+    // Allow 1 second (for now) for view refresh
     time.Sleep(2 * time.Second)
     target.Query(func (txn *column.Txn) error {
         assert.Equal(t, 3, txn.Count())

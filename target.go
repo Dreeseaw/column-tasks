@@ -18,32 +18,29 @@ func NewTarget(coll *column.Collection) *Target {
     }
 }
 
-func (t *Target) Delete(offset uint64) error {
+func (t *Target) Delete(offset uint32) bool {
     return t.inner.DeleteAt(offset)
 }
 
-// TODO: also return inserted offset
-func (t *Target) Insert(deltaMap map[string]deltaSet) error {
+func (t *Target) Insert(payload map[string]any) (uint32, error) {
     return t.inner.Insert(func (r column.Row) error {
-        for colName, vDelta := range deltaMap {
+        for colName, colVal := range payload {
             // overlook TTL for now
             if colName != "row" && colName != "expire" {
-                r.SetAny(colName, vDelta[0].Payload)
+                r.SetAny(colName, colVal)
             }
         }
         return nil
     })
 }
 
-func (t *Target) Update(deltaMap map[string]deltaSet) error {
+func (t *Target) Update(ofst uint32, payload map[string]any) error {
     return t.inner.Query(func (txn *column.Txn) error {
-        for colName, uDeltas := range deltaMap {
-            for _, curDelta := range uDeltas {
-                txn.QueryAt(curDelta.Offset, func (r column.Row) error {
-                    r.SetAny(colName, curDelta.Payload)
-                    return nil
-                })
-            }
+        for colName, colVal := range payload {
+            txn.QueryAt(ofst, func (r column.Row) error {
+                r.SetAny(colName, colVal)
+                return nil
+            })
         }
         return nil
     })
