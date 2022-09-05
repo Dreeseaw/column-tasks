@@ -42,7 +42,6 @@ func getDeltas(change comm.Commit) map[string]deltaSet {
                 Payload: payload,
             }
             colDeltas = append(colDeltas, cc)
-            // fmt.Printf("Change: %v\n", cc)
         }
         deltaSets[u.Column] = colDeltas
     }
