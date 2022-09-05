@@ -2,7 +2,9 @@ package tasks
 
 import (
     "fmt"
-    "github.com/kelindar/column"
+
+//     "github.com/kelindar/column"
+    mapset "github.com/deckarep/golang-set/v2"
 )
 
 // --- Task ---
@@ -16,11 +18,20 @@ type Task struct {
     name   string // the id of the task
     srcChn commChan // the stream connected to the source collection
     colSrc map[string]commChan // split source into needed col delta nodes
-    target *Target // the target connected to the collection to be updated
+    trgt   *Target // the target connected to the collection to be updated
+    src    *Stream // the source object
+    srcCols mapset.Set[string]
+    ops []Operation
 
-    // API accessable
-    // Target map[string]*Delta // let user assign output cols
-    // Source map[string]*Delta // let user assign input cols
+    // Task Definition accessable
+    Target map[string]*marker // let user assign output cols
+}
+
+// basic building block of task definitions
+type marker struct {
+    src   string
+    path  []string
+    ops   []Operation
 }
 
 // CreateTask returns the task, ready to be started
@@ -32,23 +43,60 @@ func CreateTask(id string, src *Stream, trgt *Target, def TaskDef) *Task {
         return nil
     }
 
-    // init Target & Source maps for definition reference
-    // tarMap := make(map[string]*Delta)
-    // srcMap := make(map[string]*Delta)
+    // init Target maps for definition reference
+    tarMap := make(map[string]*marker)
 
     t := &Task{
-        name: id,
+        name:   id,
         srcChn: srcChan,
         colSrc: make(map[string]commChan),
-        target: trgt,
-        // Target: tarMap,
+        trgt:   trgt,
+        src:    src,
+        srcCols: mapset.NewSet[string](),
+        ops:    make([]Operation, 0),
+        Target: tarMap,
         // Source: srcMap,
     }
 
     // process task definiton
     def(t)
+    if len(t.Target) == 0 {
+        return nil
+    }
+
+    // let's define the structure first (ex:)
+    //    S.id   S.cnt
+    //      |      |
+    //      |     *2
+    //      |      |
+    //    T.id   T.cnt
+
+    // markers -> operations
+    for _, finalMarker := range t.Target {
+        t.srcCols.Add(finalMarker.src)
+        for _, op := range finalMarker.ops {
+            // good place to develop dependency graph
+            t.ops = append(t.ops, op)
+        }
+    }
 
     return t
+}
+
+func (t *Task) SrcFilter(dMap deltaMap) {
+    for ofst, del := range dMap {
+        if del.Type == 0 {
+            continue
+        }
+        for cn, _ := range del.Payload {
+            if !t.srcCols.Contains(cn) {
+                delete(del.Payload, cn)
+            }
+        }
+        if len(del.Payload) == 0 {
+            delete(dMap, ofst)
+        }
+    }
 }
 
 // Start the task
@@ -57,42 +105,32 @@ func (t *Task) Start() {
     // start the source splitter
     go func() {
         for change := range t.srcChn {
-            deltaMap := getDeltas(change)
-            fmt.Println(deltaMap)
+            dMap := getDeltas(change, t.src.schema)
+            fmt.Println(dMap)
             
-            if deltas, rowChange := deltaMap["row"]; rowChange {
-                if deltas[0].Type == 1 {
-                    // process insert
-                    t.target.inner.Insert(func (r column.Row) error {
-                        for colName, vDelta := range deltaMap {
-                            // overlook TTL for now
-                            if colName != "row" && colName != "expire" {
-                                r.SetAny(colName, vDelta[0].Payload)
-                            }
-                        }
-                        return nil
-                    })
-                } else {
-                    // process delete
-                    t.target.inner.DeleteAt(deltas[0].Offset)
-                }
-            } else {
-                // process update
-                t.target.inner.Query(func (txn *column.Txn) error {
-                    for colName, uDeltas := range deltaMap {
-                        for _, curDelta := range uDeltas {
-                            txn.QueryAt(curDelta.Offset, func (r column.Row) error {
-                                r.SetAny(colName, curDelta.Payload)
-                                return nil
-                            })
-                        }
-                    }
-                    return nil
-                })
+            // Only need changes for relevant columns
+            // If this disqualifies an entire delta,
+            // delete it from being processed
+            t.SrcFilter(dMap)
+
+            // create filter(f_col, f_val) API func,
+            // filter out deltas with P[f_col] = f_val
+            
+            // create math API funcs
+            for _, op := range t.ops {
+                op.Process(dMap, t.src.schema)
             }
 
-            // goal is to mock
-            // t.target.inner.Replay(change)
+            // Apply the remaining deltas
+            for ofst, del := range dMap {
+                if del.Type == 1 {
+                    t.trgt.Insert(del.Payload) 
+                } else if del.Type == 0 {
+                    t.trgt.Delete(ofst)
+                } else {
+                    t.trgt.Update(ofst, del.Payload)
+                }
+            }
         }
     }()
 
@@ -100,18 +138,30 @@ func (t *Task) Start() {
 
 // --- The Task Definition API ---
 
-/*
-func (t *Task) Source(colName string) *Delta {
-    colChan := make(commChan, 1024)
-    t.colSrc[colName] = colChan
-    nodeId := colName + "_src"
-
-    // delta op gets dml for specific col
-    d := &Delta{
-        id: nodeId,
-        workQueue: colChan,
+func (t *Task) Source(colName string) *marker {
+    // TODO: validate source table has column
+    if _, exists := t.src.schema[colName]; !exists {
+        return nil
     }
-    t.deltas[nodeId] = d
+
+    // delta op saves task structure
+    d := &marker{
+        src: colName,
+        path: make([]string, 0),
+        ops: make([]Operation, 0),
+    }
+    d.path = append(d.path, "src")
     return d
 }
-*/
+
+func (t *Task) Multiply(m *marker, val any) *marker {
+    if m == nil {
+        return nil
+    }
+
+    m.ops = append(m.ops, MultiplyOp{
+        val: val,
+        src: m.src,
+    })
+    return m
+}
