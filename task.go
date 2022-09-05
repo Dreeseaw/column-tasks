@@ -19,8 +19,9 @@ type Task struct {
     srcChn commChan // the stream connected to the source collection
     colSrc map[string]commChan // split source into needed col delta nodes
     trgt   *Target // the target connected to the collection to be updated
+    src    *Stream // the source object
     srcCols mapset.Set[string]
-    // ops []Operation
+    ops []Operation
 
     // Task Definition accessable
     Target map[string]*marker // let user assign output cols
@@ -30,6 +31,7 @@ type Task struct {
 type marker struct {
     src   string
     path  []string
+    ops   []Operation
 }
 
 // CreateTask returns the task, ready to be started
@@ -49,8 +51,9 @@ func CreateTask(id string, src *Stream, trgt *Target, def TaskDef) *Task {
         srcChn: srcChan,
         colSrc: make(map[string]commChan),
         trgt:   trgt,
+        src:    src,
         srcCols: mapset.NewSet[string](),
-        // ops:    make([]Operation, 0), // should be set
+        ops:    make([]Operation, 0),
         Target: tarMap,
         // Source: srcMap,
     }
@@ -62,20 +65,38 @@ func CreateTask(id string, src *Stream, trgt *Target, def TaskDef) *Task {
     }
 
     // let's define the structure first (ex:)
-    //    S.id  S.cnt
+    //    S.id   S.cnt
+    //      |      |
+    //      |     *2
     //      |      |
     //    T.id   T.cnt
 
     // markers -> operations
     for _, finalMarker := range t.Target {
-        for _, step := range finalMarker.path {
-            if step ==  "src" {
-                t.srcCols.Add(finalMarker.src)
-            }
+        t.srcCols.Add(finalMarker.src)
+        for _, op := range finalMarker.ops {
+            // good place to develop dependency graph
+            t.ops = append(t.ops, op)
         }
     }
 
     return t
+}
+
+func (t *Task) SrcFilter(dMap deltaMap) {
+    for ofst, del := range dMap {
+        if del.Type == 0 {
+            continue
+        }
+        for cn, _ := range del.Payload {
+            if !t.srcCols.Contains(cn) {
+                delete(del.Payload, cn)
+            }
+        }
+        if len(del.Payload) == 0 {
+            delete(dMap, ofst)
+        }
+    }
 }
 
 // Start the task
@@ -84,23 +105,24 @@ func (t *Task) Start() {
     // start the source splitter
     go func() {
         for change := range t.srcChn {
-            deltaMap := getDeltas(change)
-            fmt.Println(deltaMap)
+            dMap := getDeltas(change, t.src.schema)
+            fmt.Println(dMap)
             
             // Only need changes for relevant columns
-            for _, del := range deltaMap {
-                if del.Type == 0 {
-                    continue
-                }
-                for cn, _ := range del.Payload {
-                    if !t.srcCols.Contains(cn) {
-                        delete(del.Payload, cn)
-                    }
-                }
+            // If this disqualifies an entire delta,
+            // delete it from being processed
+            t.SrcFilter(dMap)
+
+            // create filter(f_col, f_val) API func,
+            // filter out deltas with P[f_col] = f_val
+            
+            // create math API funcs
+            for _, op := range t.ops {
+                op.Process(dMap, t.src.schema)
             }
 
-
-            for ofst, del := range deltaMap {
+            // Apply the remaining deltas
+            for ofst, del := range dMap {
                 if del.Type == 1 {
                     t.trgt.Insert(del.Payload) 
                 } else if del.Type == 0 {
@@ -118,12 +140,28 @@ func (t *Task) Start() {
 
 func (t *Task) Source(colName string) *marker {
     // TODO: validate source table has column
+    if _, exists := t.src.schema[colName]; !exists {
+        return nil
+    }
 
     // delta op saves task structure
     d := &marker{
         src: colName,
         path: make([]string, 0),
+        ops: make([]Operation, 0),
     }
     d.path = append(d.path, "src")
     return d
+}
+
+func (t *Task) Multiply(m *marker, val any) *marker {
+    if m == nil {
+        return nil
+    }
+
+    m.ops = append(m.ops, MultiplyOp{
+        val: val,
+        src: m.src,
+    })
+    return m
 }

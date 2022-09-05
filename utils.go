@@ -17,7 +17,7 @@ type delta struct {
 // Column -> Value
 type PayloadMap map[string]any
 
-func getDeltas(change comm.Commit) deltaMap {
+func getDeltas(change comm.Commit, schema map[string]string) deltaMap {
     reader := comm.NewReader()
     dMap := make(deltaMap)
 
@@ -43,13 +43,17 @@ func getDeltas(change comm.Commit) deltaMap {
                 d.Type = uint8(reader.Type)
             }
 
-            // TODO: get col type from Coll, switch on that
-            switch u.Column {
-            case "id":
-                d.Payload[u.Column] = reader.String()
-            case "cnt":
-                d.Payload[u.Column] = reader.Int()
-            default:
+            // get col type from schema, switch on that
+            if typ, exists := schema[u.Column]; exists {
+                switch typ {
+                case "string":
+                    d.Payload[u.Column] = reader.String()
+                case "int":
+                    d.Payload[u.Column] = reader.Int()
+                default:
+                    d.Payload[u.Column] = "unknown"
+                }
+            } else {
                 d.Payload[u.Column] = "unknown"
             }
         }

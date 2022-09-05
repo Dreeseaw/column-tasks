@@ -1,19 +1,34 @@
 package tasks
 
 type Operation interface {
+    Process(deltaMap, map[string]string)
 }
 
-type RowOp struct {
-    offsetMap map[uint64]uint64 
+type MultiplyOp struct {
+    val any
+    src string
 }
 
-type SourceOp struct {
-    colName string
+func (mo MultiplyOp) Process(dMap deltaMap, schema map[string]string) {
+    for _, del := range dMap {
+        if del.Type == 1 {
+            continue
+        }
+        for cN, cV := range del.Payload {
+            if cN == mo.src {
+                del.Payload[cN] = any_mult(cV, mo.val)
+            }
+        }
+    }
 }
 
-type TargetOp struct {
-    colName string
-}
-
-type MathOp struct {
+func any_mult(v1, v2 any) any {
+    switch v := v1.(type) {
+    case int:
+        return any(v * v2.(int))
+    case float32:
+        return any(v * v2.(float32))
+    default:
+        return 0
+    }
 }

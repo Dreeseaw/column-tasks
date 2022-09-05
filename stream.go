@@ -1,6 +1,7 @@
 package tasks
 
 import (
+//    "github.com/kelindar/column"
     comm "github.com/kelindar/column/commit"
 )
 
@@ -11,11 +12,13 @@ type commChan chan comm.Commit
 // Stream implements column/commit.Logger 
 type Stream struct {
     tasks map[string]commChan
+    schema map[string]string
 }
 
-func NewStream() *Stream {
+func NewStream(schema map[string]string) *Stream {
     return &Stream{
         tasks: make(map[string]commChan),
+        schema: schema,
     }
 }
 
