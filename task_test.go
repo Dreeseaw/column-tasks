@@ -28,22 +28,26 @@ func defaultTestColls() (*Stream, *column.Collection, *column.Collection) {
     return w, source, target
 }
 
-func TestReplicaTask(t *testing.T) {
-    stream, source, target := defaultTestColls()
+func insertBobs(coll *column.Collection) {
+    i := 0
+    for uint32(i) < uint32(1) + 2 {
+        i++
+        coll.Insert(func (r column.Row) error {
+            r.SetAny("id", "bob")
+            r.SetInt("cnt", i)
+            return nil
+        })
+    }
+} 
 
-    stream.AddTask("replica")
-    task := CreateReplicaTask(stream, target)
-    task.Start()
-
-    source.Insert(func (r column.Row) error {
-        r.SetAny("id", "bob")
-        r.SetInt("cnt", 2)
-        return nil
-    })
-
-    time.Sleep(100 * time.Millisecond)
-    target.Query(func (txn *column.Txn) error {
-        assert.Equal(t, 1, txn.Count())
+func updateBobs(coll *column.Collection) {
+    coll.Query(func (txn *column.Txn) error {
+        cnt := txn.Int("cnt")
+        id := txn.Any("id")
+        txn.Range(func (i uint32) {
+            cnt.Set(3)
+            id.Set("bob3")
+        })
         return nil
     })
 }
@@ -52,23 +56,6 @@ func TestTask(t *testing.T) {
     stream, source, target := defaultTestColls()
     targetObj := NewTarget(target)
 
-    /*
-    ex: a group by?
-    task := ... {
-        t.Target["id"] = t.Source("id")
-        t.Target["cnt"] = t.Source("cnt").GroupBy("id")
-    }
-    */
-
-    /*
-    ex: a delta op?
-    task := ... {
-        t.Target["id"] = t.Source("id")
-        t.Target["cnt"] = t.Source("cnt").Mult(3) 
-    }
-    */
-
-    // v3
     task := CreateTask("mytask", stream, targetObj, func(t *Task) {
         idCol := t.Source("id")
         cntCol := t.Source("cnt")
@@ -78,15 +65,8 @@ func TestTask(t *testing.T) {
     })
     task.Start()
 
-    i := 0
-    for uint32(i) < uint32(1) + 2 {
-        i++
-        source.Insert(func (r column.Row) error {
-            r.SetAny("id", "bob")
-            r.SetInt("cnt", i)
-            return nil
-        })
-    }
+    insertBobs(source)
+
     // Insert a value to be deleted in 1 second
     source.InsertObjectWithTTL(map[string]interface{}{
         "id": "bob2",
@@ -94,15 +74,7 @@ func TestTask(t *testing.T) {
     }, 1 * time.Second)
     
     // Update some values
-    source.Query(func (txn *column.Txn) error {
-        cnt := txn.Int("cnt")
-        id := txn.Any("id")
-        txn.Range(func (i uint32) {
-            cnt.Set(3)
-            id.Set("bob3")
-        })
-        return nil
-    })
+    updateBobs(source)
     
     // Sleep thru TTL delete
     // Allow 1 second (for now) for view refresh
@@ -136,15 +108,8 @@ func TestDeltaTask(t *testing.T) {
     })
     task.Start()
 
-    i := 0
-    for uint32(i) < uint32(1) + 2 {
-        i++
-        source.Insert(func (r column.Row) error {
-            r.SetAny("id", "bob")
-            r.SetInt("cnt", i)
-            return nil
-        })
-    }
+    insertBobs(source)
+
     // Insert a value to be deleted in 1 second
     source.InsertObjectWithTTL(map[string]interface{}{
         "id": "bob2",
@@ -152,15 +117,7 @@ func TestDeltaTask(t *testing.T) {
     }, 1 * time.Second)
     
     // Update some values
-    source.Query(func (txn *column.Txn) error {
-        cnt := txn.Int("cnt")
-        id := txn.Any("id")
-        txn.Range(func (i uint32) {
-            cnt.Set(3)
-            id.Set("bob3")
-        })
-        return nil
-    })
+    updateBobs(source)
     
     // Sleep thru TTL delete
     // Allow 1 second (for now) for view refresh
@@ -202,4 +159,24 @@ func (t *ReplicaTask) Start() {
             t.target.Replay(change)
         }
     }()
+}
+
+func TestReplicaTask(t *testing.T) {
+    stream, source, target := defaultTestColls()
+
+    stream.AddTask("replica")
+    task := CreateReplicaTask(stream, target)
+    task.Start()
+
+    source.Insert(func (r column.Row) error {
+        r.SetAny("id", "bob")
+        r.SetInt("cnt", 2)
+        return nil
+    })
+
+    time.Sleep(100 * time.Millisecond)
+    target.Query(func (txn *column.Txn) error {
+        assert.Equal(t, 1, txn.Count())
+        return nil
+    })
 }

@@ -139,12 +139,12 @@ func (t *Task) Start() {
 // --- The Task Definition API ---
 
 func (t *Task) Source(colName string) *marker {
-    // TODO: validate source table has column
+    // Validate source table has column
     if _, exists := t.src.schema[colName]; !exists {
         return nil
     }
 
-    // delta op saves task structure
+    // marker saves task structure
     d := &marker{
         src: colName,
         path: make([]string, 0),
@@ -165,3 +165,11 @@ func (t *Task) Multiply(m *marker, val any) *marker {
     })
     return m
 }
+
+/*
+func (t *Task) AddCols(markers ...*marker) *marker {
+    for m := range markers {
+
+    }
+}
+*/

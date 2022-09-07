@@ -32,3 +32,13 @@ func any_mult(v1, v2 any) any {
         return 0
     }
 }
+
+/*
+type AddColsOp struct {
+    
+}
+
+func (aco *AddColsOp) Process(dMap deltaMap, schema map[string]string) {
+    
+}
+*/
