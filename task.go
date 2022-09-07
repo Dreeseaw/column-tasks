@@ -24,14 +24,34 @@ type Task struct {
     ops []Operation
 
     // Task Definition accessable
-    Target map[string]*marker // let user assign output cols
+    Target map[string]marker // let user assign output cols
 }
 
 // basic building block of task definitions
-type marker struct {
+type marker interface {
+    GetInps() []marker
+}
+
+type Marker struct {
+    inps []marker
+}
+
+func (m Marker) GetInps() []marker {
+    return m.inps
+}
+
+type srcMarker struct {
+    Marker
     src   string
-    path  []string
-    ops   []Operation
+}
+
+type mulMarker struct {
+    Marker
+    val   any
+}
+
+type addColsMarker struct {
+    Marker
 }
 
 // CreateTask returns the task, ready to be started
@@ -44,7 +64,7 @@ func CreateTask(id string, src *Stream, trgt *Target, def TaskDef) *Task {
     }
 
     // init Target maps for definition reference
-    tarMap := make(map[string]*marker)
+    tarMap := make(map[string]marker)
 
     t := &Task{
         name:   id,
@@ -55,30 +75,47 @@ func CreateTask(id string, src *Stream, trgt *Target, def TaskDef) *Task {
         srcCols: mapset.NewSet[string](),
         ops:    make([]Operation, 0),
         Target: tarMap,
-        // Source: srcMap,
     }
 
-    // process task definiton
+    // process task definiton (create markers
+    // via api funcs)
     def(t)
     if len(t.Target) == 0 {
         return nil
     }
 
-    // let's define the structure first (ex:)
-    //    S.id   S.cnt
-    //      |      |
-    //      |     *2
-    //      |      |
-    //    T.id   T.cnt
-
-    // markers -> operations
+    // markers -> operations (no optimization for now)
+    markerQueue := make([]marker, 0)
     for _, finalMarker := range t.Target {
-        t.srcCols.Add(finalMarker.src)
+        markerQueue = append(markerQueue, finalMarker)
+    }
+    for len(markerQueue) > 0 {
+        var m marker
+        m, markerQueue = markerQueue[0], markerQueue[1:]
+        for _, inpMarker := range m.GetInps() {
+            markerQueue = append(markerQueue, inpMarker)
+        }
+        switch sm := m.(type) {
+        case srcMarker:
+            t.srcCols.Add(sm.src)
+        case mulMarker:
+            t.ops = append(t.ops, &MultiplyOp{
+                val: sm.val,
+                src: "cnt", //TODO: fix this absolute hack
+            })
+        default:
+            panic("You may not use custom markers (yet).")
+        }
+    }
+
+    /*
+    for _, finalMarker := range t.Target {
         for _, op := range finalMarker.ops {
             // good place to develop dependency graph
             t.ops = append(t.ops, op)
         }
     }
+    */
 
     return t
 }
@@ -138,38 +175,39 @@ func (t *Task) Start() {
 
 // --- The Task Definition API ---
 
-func (t *Task) Source(colName string) *marker {
+func (t *Task) Source(colName string) marker {
     // Validate source table has column
     if _, exists := t.src.schema[colName]; !exists {
         return nil
     }
 
     // marker saves task structure
-    d := &marker{
+    return srcMarker{
+        Marker: Marker{
+            inps: nil,
+        },
         src: colName,
-        path: make([]string, 0),
-        ops: make([]Operation, 0),
     }
-    d.path = append(d.path, "src")
-    return d
 }
 
-func (t *Task) Multiply(m *marker, val any) *marker {
+func (t *Task) Multiply(m marker, val any) marker {
     if m == nil {
         return nil
     }
-
-    m.ops = append(m.ops, MultiplyOp{
+    
+    return mulMarker{
+        Marker: Marker{
+            inps: []marker{m},
+        },
         val: val,
-        src: m.src,
-    })
-    return m
+    }
 }
 
 /*
 func (t *Task) AddCols(markers ...*marker) *marker {
-    for m := range markers {
-
+    m := &AddColsMarker{
+        inp: 
     }
+    return m
 }
 */

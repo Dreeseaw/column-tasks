@@ -5,8 +5,8 @@ type Operation interface {
 }
 
 type MultiplyOp struct {
-    val any
     src string
+    val any
 }
 
 func (mo MultiplyOp) Process(dMap deltaMap, schema map[string]string) {
